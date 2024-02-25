@@ -16,4 +16,4 @@
 - Hardware interrupt: A signal sent by physical devices to the kernel, usually to request servicing of I/O. An interrupt is a type of trap.
 
 # Kernel
-![OS Kernel](../images/Ch3/Ch3-OS-Kernel.png)
+![OS Kernel](./images/Ch3/Ch3-OS-Kernel.png)
