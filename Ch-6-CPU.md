@@ -178,3 +178,6 @@ Please refer this section to get exact command and the purpose it servers
 
 # References from book reading google group
 1. [Unlocking Kafka's Potential: Tackling Tail Latency with eBPF](https://blog.allegro.tech/2024/03/kafka-performance-analysis.html)
+2. [Reconciling High Server Utilization and Sub-millisecond Quality-of-Service](http://csl.stanford.edu/~christos/publications/2014.mutilate.eurosys.pdf)
+3. [Command _cpustat_ help](https://illumos.org/man/8/cpustat)
+4. [_dtrace_](https://dtrace.org/about/)
