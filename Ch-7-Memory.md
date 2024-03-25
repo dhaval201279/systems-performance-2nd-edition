@@ -75,4 +75,34 @@ Working set size (WSS) is the amount of main memory a process frequently uses to
 
 # Architecture
 
+## CPU Caches
+Processors typically include on-chip hardware caches to improve memory access performance. The caches may include the following levels, of decreasing speed and increasing size:
+- Level 1: Usually split into a separate instruction cache and data cache
+- Level 2: A cache for both instructions and data
+- Level 3: Another larger level of cache
 
+Depending on the processor, Level 1 is typically referenced by virtual memory addresses, and Level 2 onward by physical memory addresses.
+
+These caches were discussed in more depth in Ch6 i.e. CPU
+
+## Software
+Software for memory management includes the virtual memory system, address translation, swapping, paging, and allocation. The topics most related to performance are included in this section: freeing memory, the free list, page scanning, swapping, the process address space, and memory allocators.
+
+### Freeing Memory
+When the available memory on the system becomes low, there are various methods that the kernel can use to free up memory, adding it to the free list of pages. These methods are pictured
+
+![Linux memory availability management](./images/Ch7/Ch7-Memory-Linux-memory-avalabiility-mgmt.png)
+
+These methods are:
+
+- **Free list**: A list of pages that are unused (also called idle memory) and available for immediate allocation. This is usually implemented as multiple free page lists, one for each locality group (NUMA).
+
+- **Page cache**: The file system cache. A tunable parameter called swappiness sets the degree to which the system should favor freeing memory from the page cache instead of swapping.
+
+- **Swapping**: This is paging by the page-out daemon, kswapd, which finds not recently used pages to add to the free list, including application memory. These are paged out, which may involve writing to either a file system-based swap file or a swap device. Naturally, this is available only if a swap file or device has been configured.
+
+- **Reaping**: When a low-memory threshold is crossed, kernel modules and the kernel slab allocator can be instructed to immediately free any memory that can easily be freed. This is also known as shrinking.
+
+- **OOM killer**: The out-of-memory killer will free memory by finding and killing a sacrificial process, found using select_bad_process() and then killed by calling oom_kill_process(). This may be logged in the system log (/var/log/messages) as an “Out of memory: Kill process” message.
+
+/// Start from 7.4 Methodology
