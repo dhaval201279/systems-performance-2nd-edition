@@ -105,4 +105,92 @@ These methods are:
 
 - **OOM killer**: The out-of-memory killer will free memory by finding and killing a sacrificial process, found using select_bad_process() and then killed by calling oom_kill_process(). This may be logged in the system log (/var/log/messages) as an “Out of memory: Kill process” message.
 
-/// Start from 7.4 Methodology
+# Methodology
+various methodologies and exercises for memory analysis and tuning :
+
+## Tool Method
+For memory, the tools method can involve checking the following for Linux:
+- **Page scanning**: Look for continual page scanning (more than 10 seconds) as a sign of memory pressure. This can be done using sar -B and checking the pgscan columns.
+- **Pressure stall information (PSI)**: cat /proc/pressure/memory (Linux 4.20+) to check memory pressure (saturation) statistics and how it is changing over time.
+- **Swapping**: If swap is configured, the swapping of memory pages (Linux definition of swapping) is a further indication that the system is low on memory. You can use vmstat(8) and check the si and so columns.
+- **vmstat**: Run vmstat 1 and check the free column for available memory.
+- **OOM killer**: These events can be seen in the system log /var/log/messages, or from dmesg(1). Search for “Out of memory.”
+- **top**: See which processes and users are the top physical memory consumers (resident) and virtual memory consumers (see the man page for the names of the columns, which differ depending on version). top(1) also summarizes free memory.
+- **perf(1)/BCC/bpftrace**: Trace memory allocations with stack traces, to identify the cause of memory usage. Note that this can cost considerable overhead. A cheaper, though coarse, solution is to perform CPU profiling (timed stack sampling) and search for allocation code paths.
+
+## USE Method
+USE method is for identifying bottlenecks and errors across all components early in a performance investigation, before deeper and more time-consuming strategies are followed.
+
+Check system-wide for:
+- **Utilization**: How much memory is in use, and how much is available. Both physical memory and virtual memory should be checked.
+- **Saturation**: The degree of *page scanning*, *paging*, *swapping*, and *Linux OOM killer* sacrifices performed, as measures to relieve memory pressure.
+- **Errors**: Software or hardware errors.
+
+You may want to check saturation first, as continual saturation is a sign of a memory issue. These metrics are usually readily available from operating system tools, including *vmstat(8)* and *sar(1)* for swapping statistics, and *dmesg(1)* for *OOM killer sacrifices*. For systems configured with a separate disk swap device, any activity to the swap device is another a sign of memory pressure. Linux also provides memory saturation statistics as part of *pressure stall information (PSI)*
+
+### Advance Usage Analysis / Checklist
+Additional characteristics are listed here as questions for consideration, which may also serve as a checklist when studying memory issues thoroughly:
+1. What is the working set size (WSS) for the applications?
+2. Where is the kernel memory used? Per slab?
+3. How much of the file system cache is active as opposed to inactive?
+4. Where is the process memory used (instructions, caches, buffers, objects, etc.)?
+5. Why are processes allocating memory (call paths)?
+6. Why is the kernel allocating memory (call paths)?
+7. Anything odd with process library mappings (e.g., changing over time)?
+8. What processes are actively being swapped out?
+9. What processes have previously been swapped out?
+10. Could processes or the kernel have memory leaks?
+11. In a NUMA system, how well is memory distributed across memory nodes?
+12. What are the IPC and memory stall cycle rates?
+13. How balanced are the memory buses?
+14. How much local memory I/O is performed as opposed to remote memory I/O?
+
+## Leak Detection
+This may first be noticed because the system starts swapping or an application is OOM killed, in response to the endless memory pressure.
+
+This type of issue is caused by either:
+1. A memory leak: A type of software bug where memory is no longer used but never freed. This is fixed by modifying the software code, or by applying patches or upgrades (which modify the code).
+2. Memory growth: The software is consuming memory normally, but at a much higher rate than is desirable for the system. This is fixed either by changing the software configuration, or by the software developer changing how the application consumes memory.
+
+## Static Performance Tuning
+For memory performance, examine the following aspects of the static configuration:
+
+
+1. How much main memory is there in total?
+2. How much memory are applications configured to use (their own config)?
+3. Which memory allocators do the applications use?
+4. What is the speed of main memory? Is it the fastest type available (DDR5)?
+5. Has main memory ever been fully tested (e.g., using Linux memtester)?
+6. What is the system architecture? NUMA, UMA?
+7. Is the operating system NUMA-aware? Does it provide NUMA tunables?
+8. Is memory attached to the same socket, or split across sockets?
+9. How many memory buses are present?
+10. What are the number and size of the CPU caches? TLB?
+11. What are the BIOS settings?
+12. Are large pages configured and used?
+13. Is over commit available and configured
+14. What other system memory tunables are in use?
+15. Are there software-imposed memory limits (resource controls)?
+
+Is overcommit available and configured?
+
+What other system memory tunables are in use?
+
+Are there software-imposed memory limits (resource controls)?
+
+# Observability Tools
+| Tool | Description |
+| :---    | :---     |
+| *vmstat* | Virtual and physical memory statistics |
+| *PSI* | Memory pressure stall information |
+| *sar* | Historical statistics |
+| *swapon* | Swap device usage |
+| *slaptop* | Kernel slab allocator statistics |
+| *numstat* | NUMA statistics |
+| *ps* | Process status |
+| *top* | Monitor per-process memory usage |
+| *pmap* | Process address space statistics |
+| *perf* | Memory PMC and tracepoint analysis |
+| *drsnoop* | Direct reclaim tracing |
+| *wss* | Working set size estimation |
+| *bpftrace* | Tracing programs for memory analysis |
