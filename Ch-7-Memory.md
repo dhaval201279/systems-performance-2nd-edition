@@ -182,11 +182,11 @@ Are there software-imposed memory limits (resource controls)?
 | Tool | Description |
 | :---    | :---     |
 | *vmstat* | Virtual and physical memory statistics |
-| *PSI* | Memory pressure stall information |
-| *sar* | Historical statistics |
+| *PSI* | Memory pressure stall information (PSI) |
+| *sar* | (System Activity Reporter) Historical statistics |
 | *swapon* | Swap device usage |
-| *slaptop* | Kernel slab allocator statistics |
-| *numstat* | NUMA statistics |
+| *slabtop* | Kernel slab allocator statistics |
+| *numastat* | NUMA statistics |
 | *ps* | Process status |
 | *top* | Monitor per-process memory usage |
 | *pmap* | Process address space statistics |
@@ -194,3 +194,64 @@ Are there software-imposed memory limits (resource controls)?
 | *drsnoop* | Direct reclaim tracing |
 | *wss* | Working set size estimation |
 | *bpftrace* | Tracing programs for memory analysis |
+
+# Other Tools
+| Tool | Description |
+| :---    | :---     |
+| *pmcarch* | CPU cycle usage including LLC misses |
+| *tlbstat* | Summarizes TLB cycles |
+| *free* | Cache capacity statistics |
+| *cachestat* | Page cache statistics |
+| *oomkill* | Shows extra info on OOM kill events |
+| *memleak* | Shows possible memory leak code paths |
+| *mmap-snoop* | Traces mmap(2) calls system-wide |
+| *brkstack* | Shows brk() calls with user stack traces |
+| *shmsnoop* | Traces shared memory calls with details |
+| *faults* | Shows page faults, by user stack trace |
+| *ffaults* | Shows page faults, by filename |
+| *vmscan* | Measures VM scanner shrink and reclaim times |
+| *swapin* | Shows swap-ins by process |
+| *hfaults* | Shows huge page faults, by process |
+| *dmesg* | Check for “Out of memory” messages from the OOM killer. |
+| *dmidecode* | Shows BIOS information for memory banks. |
+| *tiptop* | A version of top(1) that displays PMC statistics by process. |
+| *valgrind* | A performance analysis suite, including memcheck, a wrapper for user-level allocators for memory usage analysis including leak detection. This costs significant overhead; the manual advises that it can cause the target to run 20 to 30 times slower |
+| *iostat* | If the swap device is a physical disk or slice, device I/O may be observable using iostat(1), which indicates that the system is paging. |
+| */proc/zoneinfo* | Statistics for memory zones (DMA, etc.). |
+| */proc/buddyinfo* | Statistics for the kernel buddy allocator for pages. |
+| */proc/pagetypeinfo* | Kernel free memory page statistics; can be used to help debug issues of kernel memory fragmentation. |
+| */sys/devices/system/node/node*/numastat* | Statistics for NUMA nodes |
+| *SysRq m* | Magic SysRq has an “m” key to dump memory info to the console. |
+
+# Linux Memory Tunable parameters
+| Option | Default | Description |
+| :---    | :---:     | :--- |
+| *vm.dirty_background_bytes* | 0 | Amount of dirty memory to trigger pdflush background write-back |
+| *vm.dirty_background_ratio* | 10 | Percentage of dirty system memory to trigger pdflush background write-back |
+| *vm.dirty_bytes* | 0 | Amount of dirty memory that causes a writing process to start write-back |
+| *vm.dirty_ratio* | 20 | Ratio of dirty system memory to cause a writing process to begin |
+| *vm.vm.dirty_expire_centisecs* | 3000 | Minimum time for dirty memory to be eligible for pdflush (promotes write cancellation) |
+| *vm.dirty_writeback_centisecs* | 500 | pdflush wake-up interval (0 to disable) |
+| *vm.min_free_kbytes* | dynamic | sets the desired free memory amount (some kernel atomic allocations can consume this) |
+| *vm.watermark_scale_factor* | 10 | The distance between kswapd watermarks (min, low, high) that control waking up and sleeping (unit is fractions of 10000, such that 10 means 0.1% of system memory) |
+| *vm.watermark_boost_factor* | 5000 | How far past the high watermark kswapd scans when memory is fragmented (recent fragmentation events occurred); unit is fractions of 10000, so 5000 means kswapd can boost up to 150% of the high watermark; 0 to disable |
+| *vm.percpu_pagelist_fraction* | 0 | This can override the default max fraction of pages that can be allocated to per-cpu page lists (a value of 10 limits to 1/10th of pages) |
+| *vm.overcommit_memory* | 0 | 0 = Use a heuristic to allow reasonable overcommits; 1 = always overcommit; 2 = don’t overcommit |
+| *vm.swappiness* | 60 | The degree to favor swapping (paging) for freeing memory over reclaiming it from the page cache |
+| *vm.vfs_cache_pressure* | 100 | The degree to reclaim cached directory and inode objects; lower values retain them more; 0 means never reclaim—can easily lead to out-of-memory conditions |
+
+| *kernel.numa_balancing* | 1 | Enables automatic NUMA page balancing |
+| *kernel.numa_balancing_scan_size_mb* | 256 | How many Mbytes of pages are scanned for each NUMA balancing scan |
+
+# Resource Controls
+Basic resource controls, including setting a main memory limit and a virtual memory limit, may be available using ulimit(1).
+
+For Linux, the container groups (cgroups) memory subsystem provides various additional controls : 
+- ***memory.limit_in_bytes***: The maximum allowed user memory, including file cache usage, in bytes
+- ***memory.memsw.limit_in_bytes***: The maximum allowed memory and swap space, in bytes (when swap is in use)
+- ***memory.kmem.limit_in_bytes***: The maximum allowed kernel memory, in bytes
+- ***memory.tcp.limit_in_bytes***: The maximum tcp buffer memory, in bytes.
+- ***memory.swappiness***: Similar to vm.swappiness described earlier but can be set for a cgroup
+- ***memory.oom_control***: Can be set to 0, to allow the OOM killer for this cgroup, or 1, to disable it
+
+Linux also allows system-wide configuration in /etc/security/limits.conf.
