@@ -40,4 +40,104 @@ File system latency is the primary metric of file system performance, measured a
 
 Cases where applications may not be directly affected include the use of non-blocking I/O, prefetch (Section 8.3.4), and when I/O is issued from an asynchronous thread (e.g., a background flush thread)
 
-######################################################################### 8.3.6 (write back caching)
+# Architecture
+## File System I/O Stack
+![File System I/O Stack](./images/Ch8/Ch8-File-System-IO-Stack.png)
+
+# Methodology
+## Latency Analysis
+| Layer | Pros | Cons |
+| :---    | :---     |  :---     |
+| **Application** | Closest measure of the effect of file system latency on the application; can also inspect application context to determine if latency is occurring during the application’s primary function, or if it is asynchronous. | Technique varies between applications and application software versions. |
+| **Syscall interface** | Well-documented interface. Commonly observable via operating system tools and static tracing. | Syscalls catch all file system types, including non-storage file systems (statistics, sockets), which may be confusing unless filtered. Adding to the confusion, there may also be multiple syscalls for the same file system function. For example, for read, there may be read(2), pread64(2), preadv(2), preadv2(2), etc., all of which need to be measured. |
+| **VFS** | Standard interface for all file systems; one call for file system operations (e.g., vfs_write()) | VFS traces all file system types, including non-storage file systems, which may be confusing unless filtered. |
+| **Top of file system** | Target file system type traced only; some file system internal context for extended details. | File system-specific; tracing technique may vary between file system software versions (although the file system may have a VFS-like interface that maps to VFS, and as such doesn’t change often). |
+
+## Workload Characterization
+Basic attributes that characterize the file system workload:
+- Operation rate and operation types
+- File I/O throughput
+- File I/O size
+- Read/write ratio
+- Synchronous write ratio
+- Random versus sequential file offset access
+
+### Advanced Workload Characterization Checklist
+Additional details may be included to characterize the workload. These have been listed here as questions for consideration, which may also serve as a checklist when studying file system issues thoroughly:
+- What is the file system cache hit ratio? Miss rate?
+- What are the file system cache capacity and current usage?
+- What other caches are present (directory, inode, buffer), and what are their statistics?
+- Have any attempts been made to tune the file system in the past? Are any file system parameters set to values other than their defaults?
+- Which applications or users are using the file system?
+- What files and directories are being accessed? Created and deleted?
+- Have any errors been encountered? Was this due to invalid requests, or issues from the file system?
+- Why is file system I/O issued (user-level call path)?
+- To what degree do applications directly (synchronously) request file system I/O?
+- What is the distribution of I/O arrival times?
+
+## Performance Monitoring
+Key metrics for file system performance are:
+- Operation rate
+- Operation latency
+
+## Static Performance Tuning
+Static performance tuning focuses on issues of the configured environment. For file system performance, examine the following aspects of the static configuration:
+- How many file systems are mounted and actively used?
+- What is the file system record size?
+- Are access timestamps enabled?
+- What other file system options are enabled (compression, encryption...)?
+- How has the file system cache been configured? Maximum size?
+- How have other caches (directory, inode, buffer) been configured?
+- Is a second-level cache present and in use?
+- How many storage devices are present and in use?
+- What is the storage device configuration? RAID?
+- Which file system types are used?
+- What is the version of the file system (or kernel)?
+- Are there file system bugs/patches that should be considered?
+- Are there resource controls in use for file system I/O?
+
+# Observability Tools
+| Tool | Description |
+| :---    | :---     |
+| *mount* | List file systems and their mount flags |
+| *free* | Cache capacity statistics |
+| *top* | Includes memory usage summary |
+| *vmstat* | Virtual memory statistics |
+| *sar* | Various statistics, including historic |
+| *slabtop* | Kernel slab allocator statistics |
+| *strace* | System call tracing |
+| *fatrace* | Trace file system operations using fanotify |
+| *latencytop* | Show system-wide latency sources |
+| *opensnoop* | Trace files opened |
+| *filetop* | Top files in use by IOPS and bytes |
+| *cachestat* | Page cache statistics |
+| *ext4dist (xfs, zfs, btrfs, nfs)* | Show ext4 operation latency distribution |
+| *ext4slower (xfs, zfs, btrfs, nfs)* | Show slow ext4 operations |
+| *bpftrace* | Custom file system tracing |
+
+## Other Tools
+| Tool | Description |
+| :---    | :---     |
+| *syscount* | Counts syscalls including file system-related |
+| *statsnoop* | Trace calls to stat(2) varieties |
+| *syncsnoop* | Trace sync(2) and variety calls with timestamps |
+| *mmapfiles* | Count mmap(2) files |
+| *scread* | Count read(2) files |
+| *fmapfault* | Count file map faults |
+| *filelife* | Trace short-lived files with their lifespan in seconds |
+| *vfsstat* | Common VFS operation statistics |
+| *vfscount* | Count all VFS operations |
+| *vfssize* | Show VFS read/write sizes |
+| *fsrwstat* | Show VFS reads/writes by file system type |
+| *fileslower* | Show slow file reads/writes |
+| *filetype* | Show VFS reads/writes by file type and process |
+| *ioprofile* | Count stacks on I/O to show code paths |
+| *writesync* | Show regular file writes by sync flag |
+| *writeback* | Show write-back events and latencies |
+| *dcstat* | Directory cache hit statistics |
+| *dcsnoop* | Trace directory cache lookups |
+| *mountsnoop* | Trace mount and umounts system-wide |
+| *icstat* | Inode cache hit statistics |
+| *bufgrow* | Buffer cache growth by process and bytes |
+| *readahead* | Show read ahead hits and efficiency |
+
