@@ -1,5 +1,49 @@
-File system performance often matters more to the application than disk or storage device performance, because it is the file system that applications interact with and wait for. File systems can use caching, buffering, and asynchronous I/O to avoid subjecting applications to disk-level (or remote storage system) latency.
+As systems become more distributed, especially with cloud computing environments, the network plays a bigger role in performance. Common tasks in network performance include improving network latency and throughput, and eliminating latency outliers, which can be caused by dropped or delayed packets.
 
+Network analysis spans hardware and software - 
+- hardware is the physical network, which includes the network interface cards, switches, routers, and gateways (these typically have software, too)
+- software is the kernel network stack including network device drivers, packet queues, and packet schedulers, and the implementation of network protocols. Lower-level protocols are typically kernel software (IP, TCP, UDP, etc.) and higher-level protocols are typically library or application software (e.g., HTTP)
+
+# Terminology
+**Interface**: The term interface port refers to the physical network connector. The term interface or link refers to the logical instance of a network interface port, as seen and configured by the OS. (Not all OS interfaces are backed by hardware: some are virtual.)
+
+**Packet**: The term packet refers to a message in a packet-switched network, such as IP packets.
+
+**Frame**: A physical network-level message, for example an Ethernet frame.
+
+**Socket**: An API originating from BSD for network endpoints.
+
+**Bandwidth**: The maximum rate of data transfer for the network type, usually measured in bits per second.
+
+**Throughput**: The current data transfer rate between the network endpoints, measured in bits per second or bytes per second.
+
+**Latency**: Network latency can refer to the time it takes for a message to make a round-trip between endpoints, or the time required to establish a connection (e.g., TCP handshake), excluding the data transfer time that follows.
+
+# Models
+## Network Interface
+![Network Interfaces](./images/Ch10/Ch10-Network-Network-Interface.png)
+
+Network Interface 
+- is an operating system endpoint for network connections
+- are mapped to physical network ports as part of their configuration. Ports connect to the network and typically have separate transmit and receive channels.
+
+## Controller
+![Controller](./images/Ch10/Ch10-Network-NIC-Controller.png)
+
+provides one or more network ports for the system and houses a network controller: a microprocessor for transferring packets between the ports and the system I/O transport. An example controller with four ports is pictured
+
+## Protocol Stack
+![Protocol Stack](./images/Ch10/Ch10-Network-Network-Protocol-Stack.png)
+
+# Concepts
+# Networking and Routing
+![Network connected via routers](./images/Ch10/Ch10-Network-Network-connected-via-routers.png)
+
+Host A can connect to host B via the local network, usually driven by a network switch. Host A can connect to host C via router 1, and to host D via routers 1, 2, and 3. Since network components such as routers are shared, contention from other traffic (e.g., host C to host E) can hurt performance.
+
+Connections between pairs of hosts involve unicast transmission. Multicast transmission allows a sender to transmit to multiple destinations simultaneously, which may span multiple networks. This must be supported by the router configuration to allow delivery. In public cloud environments it may be blocked.
+
+=======================================================================================================
 # Terminology
 **File system**: An organization of data as files and directories, with a file-based interface for accessing them, and file permissions to control access. Additional content may include special file types for devices, sockets, and pipes, and metadata including file access timestamps.
 
