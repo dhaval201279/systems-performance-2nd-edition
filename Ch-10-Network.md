@@ -189,8 +189,123 @@ QUIC is built upon UDP, and provides several features on top of it, including:
 
 QUIC is in heavy use by the Chrome web browser.
 
-# Hardware (10.4.2)
+# Hardware
+Networking hardware includes interfaces, controllers, switches, routers, and firewalls. An understanding of their operation is useful, even if they are managed by other staff
 
+## Interfaces
+Interface types are based on layer 2 standards, each providing a maximum bandwidth. Higher-bandwidth interfaces provide lower data-transfer latency, at a higher cost. When designing new servers, a key decision is often how to balance the price of the server with the desired network performance.
+
+## Controllers
+Physical network interfaces are provided to the system via controllers, either built into the system board or provided via expander cards.
+
+Controllers are driven by microprocessors and are attached to the system via an I/O transport (e.g., PCI). Either of these can become the limiter for network throughput or IOPS.
+
+## Switches and Routers
+Switches provide a dedicated communication path between any two connected hosts, allowing multiple transmissions between pairs of hosts without interference. This technology replaced hubs 
+
+Routers deliver packets between networks and use network protocols and routing tables to determine efficient delivery paths. Delivering a packet between two cities may involve a dozen or more routers, plus other network hardware. The routers and routes are usually configured to update dynamically, so that the network can automatically respond to network and router outages, and to balance load. This means that at a given point in time, no one can be sure what path a packet is actually taking. With multiple paths possible, there is also the potential for packets to be delivered out of order, which can cause TCP performance problems.
+
+Network administration teams are therefore frequently required to exonerate their infrastructure. They can do so using advanced real-time monitoring tools to check all routers and other network components involved.
+
+Both routers and switches include buffers and microprocessors, which themselves can become performance bottlenecks under load. As an extreme example, I once found that an early 10 GbE switch could drive no more than 11 Gbits/s in total across all ports, due to its limited CPU capacity.
+
+Note that switches and routers are also often where rate transitions occur (switching from one bandwidth to another, e.g., a 10 Gbps link transitions to a 1 Gbps link). When this happens, some buffering is necessary to avoid excessive drops, but many switches and routers over-buffer (see the *bufferbloat* issue in Section 10.3.6, Buffering), leading to high latencies. Better queue management algorithms can help eliminate this problem, but not all network device vendors support them. Pacing at the source can also be a way to alleviate issues with rate transitions by making the traffic less bursty.
+
+## Firewalls
+Firewalls are often in use to permit only authorized communications based on a configured rule set, improving the security of the network. They may be present as both physical network devices and kernel software.
+
+Firewalls can become a performance bottleneck, especially when configured to be stateful. Stateful rules store metadata for each seen connection, and the firewall may experience excessive memory load when processing many connections. This can happen due to a denial of service (DoS) attack that attempts to inundate a target with connections. It can also happen with a heavy rate of outbound connections, as they may require similar connection tracking.
+
+As firewalls are custom hardware or software, the tools available to analyze them depends on each firewall product. See their respective documentation.
+
+The use of extended BPF to implement firewalls on commodity hardware is growing, due to its performance, programmability, ease of use, and final cost. Companies adopting BPF firewalls and DDoS solutions include Facebook [Deepak 18], Cloudflare [Majkowski 18], and Cilium [Cilium 20a].
+
+
+# Software
+## Network Stack
+
+### Generic Network Stack
+![TCP - Generic Network Stack](./images/Ch10/Ch10-Network-Generic-Network-Stack.png)
+
+### Linux Network Stack
+![TCP - Linux Network Stack](./images/Ch10/Ch10-Network-Linux-Network-Stack.png)
+
+On Linux systems, the network stack is a core kernel component, and device drivers are additional modules. Packets are passed through these kernel components as the struct *sk_buff* (socket buffer) data type. Note that there may also be queueing in the IP layer (not pictured) for packet reassembly.
+
+The following sections discuss Linux implementation details related to performance: TCP connection queues, TCP buffering, queueing disciplines, network device drivers, CPU scaling, and kernel bypass. 
+
+#### TCP Connection Queues
+Bursts of inbound connections are handled by using backlog queues. There are two such queues, one for incomplete connections while the TCP handshake completes (also known as the SYN backlog), and one for established sessions waiting to be accepted by the application (also known as the listen backlog).
+
+![TCP - Backlog Queues](./images/Ch10/Ch10-TCP-Backlog-Queues.png)
+
+Only one queue was used in earlier kernels, and it was vulnerable to SYN floods. A SYN flood is a type of DoS attack that involves sending numerous SYNs to the listening TCP port from bogus IP addresses. This fills the backlog queue while TCP waits to complete the handshake, preventing real clients from connecting.
+
+With two queues, the first can act as a staging area for potentially bogus connections, which are promoted to the second queue only once the connection is established. The first queue can be made long to absorb SYN floods and optimized to store only the minimum amount of metadata necessary.
+
+The use of SYN cookies bypasses the first queue, as they show the client is already authorized.
+
+The length of these queues can be tuned independently 
+
+#### TCP Buffering
+Data throughput is improved by using send and receive buffers associated with the socket.
+
+![TCP - Send Receive Buffers](./images/Ch10/Ch10-TCP-Send-Receive-Buffers.png)
+
+The size of both the send and receive buffers is tunable. Larger sizes improve throughput performance, at the cost of more main memory spent per connection. One buffer may be set to be larger than the other if the server is expected to perform more sending or receiving. The Linux kernel will also dynamically increase the size of these buffers based on connection activity, and allows tuning of their minimum, default, and maximum sizes.
+
+#### Queuing Discipline
+This is an optional layer for managing traffic classification (tc), scheduling, manipulation, filtering, and shaping of network packets. Linux provides numerous queueing discipline algorithms (*qdiscs*), which can be configured using the tc(8) command.
+
+Each has a man page, the man(1) command can be used to list them:
+
+``` bash
+man -k tc-
+```
+
+The Linux kernel sets *pfifo_fast* as the default qdisc, whereas systemd is less conservative and sets it to *fq_codel* to reduce potential *bufferbloat*, at the cost of slightly higher complexity in the *qdisc* layer.
+
+*BPF* can enhance the capabilities of this layer with the programs of type *BPF_PROG_TYPE_SCHED_CLS* and *BPF_PROG_TYPE_SCHED_ACT*. These BPF programs can be attached to kernel ingress and egress points for packet filtering, mangling, and forwarding, as used by load balancers and firewalls.
+
+#### Network Device Drivers
+The network device driver usually has an additional buffer—a ring buffer—for sending and receiving packets between kernel memory and the NIC. This was pictured in above Figure driver queue.
+
+A performance feature that has become more common with high-speed networking is the use of interrupt coalescing mode. Instead of interrupting the kernel for every arrived packet, an interrupt is sent only when either a timer (polling) or a certain number of packets is reached. This reduces the rate at which the kernel communicates with the NIC, allowing larger transfers to be buffered, resulting in greater throughput, though at some cost in latency.
+
+The Linux kernel uses a new API (NAPI) framework that uses an interrupt mitigation technique: for low packet rates, interrupts are used (processing is scheduled via a softirq); for high packet rates, interrupts are disabled, and polling is used to allow coalescing [Corbet 03][Corbet 06b]. This provides low latency or high throughput, depending on the workload. Other features of NAPI include:
+- Packet throttling, which allows early packet drop in the network adapter to prevent the system from being overwhelmed by packet storms.
+- Interface scheduling, where a quota is used to limit the buffers processed in a polling cycle, to ensure fairness between busy network interfaces.
+- Support for the *SO_BUSY_POLL* socket option, where user-level applications can reduce network receive latency by requesting to busy wait (spin on CPU until an event occurs) on a socket [Dumazet 17a].
+
+Coalescing can be especially important for improving virtual machine networking, and is used by the ena network driver used by AWS EC2.
+
+#### CPU Scaling
+igh packet rates can be achieved by engaging multiple CPUs to process packets and the TCP/IP stack. Linux supports various methods for multi-CPU packet processing (see Documentation/networking/scaling.txt):
+- RSS (Receive Side Scaling)
+The Netflix FreeBSD CDN uses RSS to assist TCP large receive offload (LRO), allowing packets for the same connection to be aggregated, even when separated by other packets [Gallatin 17].
+- RPS (Receive Packet Steering)
+- RFS (Receive Flow Steering)
+- Accelerated Receive FlowSteering
+- XPS: Transmit Packet Steering
+
+#### Kernel Bypass
+Applications can bypass the kernel network stack using technologies such as the Data Plane Development Kit (DPDK) in order to achieve higher packet rates and performance. This involves an application implementing its own network protocols in user-space, and making writes to the network driver via a DPDK library and a kernel user space I/O (UIO) or virtual function I/O (VFIO) driver.
+
+#### Other Network Optimizations
+There are other algorithms in use throughout the Linux network stack to improve performance. Below Figure shows these for the TCP send path (many of these are called from the tcp_write_xmit() kernel function).
+
+![TCP - Send Path](./images/Ch10/Ch10-Network-TCP-Send-Path.png)
+
+Some of these components and algorithms were described earlier (socket send buffers, TSO,9 congestion controls, Nagle, and qdiscs); others include:
+- Pacing: This controls when to send packets, spreading out transmissions (pacing) to avoid bursts that may hurt performance (this may help avoid TCP micro-bursts that can lead to queueing delay, or even cause network switches to drop packets. It may also help with the incast problem, when many end points transmit to one at the same time [Fritchie 12]).
+
+- TCP Small Queues (TSQ): This controls (reduces) how much is queued by the network stack to avoid problems including bufferbloat [Bufferbloat 20].
+
+- Byte Queue Limits (BQL): These automatically size the driver queues large enough to avoid starvation, but also small enough to reduce the maximum latency of queued packets, and to avoid exhausting NIC TX descriptors [Hrubý 12]. It works by pausing the addition of packets to the driver queue when necessary, and was added in Linux 3.3 [Siemon 13].
+
+- Earliest Departure Time (EDT): This uses a timing wheel instead of a queue to order packets sent to the NIC. Timestamps are set on every packet based on policy and rate configuration. This was added in Linux 4.20, and has BQL- and TSQ-like capabilities [Jacobson 18].
+
+# Methodology (10.5)
 =======================================================================================================
 # Terminology
 **File system**: An organization of data as files and directories, with a file-based interface for accessing them, and file permissions to control access. Additional content may include special file types for devices, sockets, and pipes, and metadata including file access timestamps.
