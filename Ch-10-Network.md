@@ -305,149 +305,191 @@ Some of these components and algorithms were described earlier (socket send buff
 
 - Earliest Departure Time (EDT): This uses a timing wheel instead of a queue to order packets sent to the NIC. Timestamps are set on every packet based on policy and rate configuration. This was added in Linux 4.20, and has BQL- and TSQ-like capabilities [Jacobson 18].
 
-# Methodology (10.5)
-=======================================================================================================
-# Terminology
-**File system**: An organization of data as files and directories, with a file-based interface for accessing them, and file permissions to control access. Additional content may include special file types for devices, sockets, and pipes, and metadata including file access timestamps.
-
-**File system cache**: An area of main memory (usually DRAM) used to cache file system contents, which may include different caches for various data and metadata types.
-
-**Operations**: File system operations are requests of the file system, including read(2), write(2), open(2), close(2), stat(2), mkdir(2), and other operations.
-
-**I/O**: Input/output. File system I/O can be defined in several ways; here it is used to mean only operations that directly read and write (performing I/O), including read(2), write(2), stat(2) (read statistics), and mkdir(2) (write a new directory entry). I/O does not include open(2) and close(2) (although those calls update metadata and can cause indirect disk I/O).
-
-**Logical I/O**: I/O issued by the application to the file system.
-
-**Physical I/O**: I/O issued directly to disks by the file system (or via raw I/O).
-
-**Block size**: Also known as record size, is the size of file system on-disk data groups. See Block vs. Extent in Section 8.4.4, File System Features.
-
-**Throughput**: The current data transfer rate between applications and the file system, measured in bytes per second.
-
-**inode**: An index node (inode) is a data structure containing metadata for a file system object, including permissions, timestamps, and data pointers.
-
-**VFS**: Virtual file system, a kernel interface to abstract and support different file system types.
-
-**Volume**: An instance of storage providing more flexibility than using a whole storage device. A volume may be a portion of a device, or multiple devices.
-
-**Volume manager**: Software for managing physical storage devices in a flexible way, creating virtual volumes for use by the OS.
-
-# Models
-## File System Interfaces
-![File System Interfaces](./images/Ch8/Ch8-File-System-Interfaces.png)
-
-## File System Cache
-![File System Cache](./images/Ch8/Ch8-File-System-Cache.png)
-
-## Second Level Cache
-![Second Level Cache](./images/Ch8/Ch8-File-System-Second-Level-Cache.png)
-
-# Concepts
-File system latency is the primary metric of file system performance, measured as the time from a logical file system request to its completion. It includes time spent in the file system and disk I/O subsystem, and waiting on disk devices—the physical I/O. Application threads often block during an application request in order to wait for file system requests to complete—in this way, file system latency directly and proportionally affects application performance.
-
-Cases where applications may not be directly affected include the use of non-blocking I/O, prefetch (Section 8.3.4), and when I/O is issued from an asynchronous thread (e.g., a background flush thread)
-
-# Architecture
-## File System I/O Stack
-![File System I/O Stack](./images/Ch8/Ch8-File-System-IO-Stack.png)
-
 # Methodology
-## Latency Analysis
-| Layer | Pros | Cons |
-| :---    | :---     |  :---     |
-| **Application** | Closest measure of the effect of file system latency on the application; can also inspect application context to determine if latency is occurring during the application’s primary function, or if it is asynchronous. | Technique varies between applications and application software versions. |
-| **Syscall interface** | Well-documented interface. Commonly observable via operating system tools and static tracing. | Syscalls catch all file system types, including non-storage file systems (statistics, sockets), which may be confusing unless filtered. Adding to the confusion, there may also be multiple syscalls for the same file system function. For example, for read, there may be read(2), pread64(2), preadv(2), preadv2(2), etc., all of which need to be measured. |
-| **VFS** | Standard interface for all file systems; one call for file system operations (e.g., vfs_write()) | VFS traces all file system types, including non-storage file systems, which may be confusing unless filtered. |
-| **Top of file system** | Target file system type traced only; some file system internal context for extended details. | File system-specific; tracing technique may vary between file system software versions (although the file system may have a VFS-like interface that maps to VFS, and as such doesn’t change often). |
+## Tools Method
+tools method is a process of iterating over available tools, examining key metrics they provide. It may overlook issues for which the tools provide poor or no visibility, and it can be time-consuming to perform.
+For networking, the tools method can involve checking:
+
+- _**nstat/netstat -s**_: Look for a high rate of retransmits and out-of-order packets. What constitutes a “high” retransmit rate depends on the clients: an Internet-facing system with unreliable remote clients should have a higher retransmit rate than an internal system with clients in the same data center.
+
+- _**ip -s link/netstat -i**_: Check interface error counters, including “errors,” “dropped,” “overruns.”
+
+- _**ss -tiepm**_: Check for the limiter flag for important sockets to see what their bottleneck is, as well as other statistics showing socket health.
+
+- _**nicstat/ip -s link**_: Check the rate of bytes transmitted and received. High throughput may be limited by a negotiated data link speed, or an external network throttle. It could also cause contention and delays between network users on the system.
+
+- _**tcplife**_: Log TCP sessions with process details, duration (lifespan), and throughput statistics.
+
+- _**tcptop**_: Watch top TCP sessions live.
+
+- _**tcpdump**_: While this can be expensive to use in terms of the CPU and storage costs, using tcpdump(8) for short periods may help you identify unusual network traffic or protocol headers.
+
+- _**perf(1)/BCC/bpftrace**_: Inspect selected packets between the application and the wire, including examining kernel state.
+
+## USE Method
+USE method is for quickly identifying bottlenecks and errors across all components. For each network interface, and in each direction—transmit (TX) and receive (RX)—check for:
+
+- _**Utilization**_: The time the interface was busy sending or receiving frames
+
+- _**Saturation**_: The degree of extra queueing, buffering, or blocking due to a fully utilized interface
+
+- _**Errors**_: For receive: bad checksum, frame too short (less than the data link header) or too long, collisions (unlikely with switched networks); for transmit: late collisions (bad wiring)
+
+Priority Order - EUS
 
 ## Workload Characterization
-Basic attributes that characterize the file system workload:
-- Operation rate and operation types
-- File I/O throughput
-- File I/O size
-- Read/write ratio
-- Synchronous write ratio
-- Random versus sequential file offset access
+The following are the most basic characteristics to measure:
 
-### Advanced Workload Characterization Checklist
-Additional details may be included to characterize the workload. These have been listed here as questions for consideration, which may also serve as a checklist when studying file system issues thoroughly:
-- What is the file system cache hit ratio? Miss rate?
-- What are the file system cache capacity and current usage?
-- What other caches are present (directory, inode, buffer), and what are their statistics?
-- Have any attempts been made to tune the file system in the past? Are any file system parameters set to values other than their defaults?
-- Which applications or users are using the file system?
-- What files and directories are being accessed? Created and deleted?
-- Have any errors been encountered? Was this due to invalid requests, or issues from the file system?
-- Why is file system I/O issued (user-level call path)?
-- To what degree do applications directly (synchronously) request file system I/O?
-- What is the distribution of I/O arrival times?
+- **Network interface throughput**: RX and TX, bytes per second
+- **Network interface IOPS**: RX and TX, frames per second
+- **TCP connection rate**: Active and passive, connections per second
 
-## Performance Monitoring
-Key metrics for file system performance are:
-- Operation rate
-- Operation latency
+### Advanced Workload Characterization
+These have been listed here as questions for consideration, which may also serve as a checklist when studying CPU issues thoroughly:
+
+1. What is the average packet size? RX, TX?
+2. What is the protocol breakdown for each layer? For transport protocols: TCP, UDP (which can include QUIC).
+3. What TCP/UDP ports are active? Bytes per second, connections per second?
+4. What are the broadcast and multicast packet rates?
+5. Which processes are actively using the network?
+
+## Latency Analysis
+| Latency | Description |
+| :---    | :---     |
+| **Name Resolution Strategy** | The time for a host to be resolved to an IP address, usually by DNS resolution—a common source of performance issues. |
+| **Ping Latency** | The time from an ICMP echo request to a response. This measures the network and kernel stack handling of the packet on each host. |
+| **TCP connection initialization latency** | The time from when a SYN is sent to when the SYN,ACK is received. Since no applications are involved, this measures the network and kernel stack latency on each host, similar to ping latency, with some additional kernel processing for the TCP session. TCP Fast Open (TFO) may be used to reduce this latency. |
+| **TCP first-byte latency** | Also known as the time-to-first-byte latency (TTFB), this measures the time from when a connection is established to when the first data byte is received by the client. This includes CPU scheduling and application think time for the host, making it a more a measure of application performance and current load than TCP connection latency. |
+| **TCP retransmits** | If present, can add thousands of milliseconds of latency to network I/O. |
+| **_TCP TIME_WAIT_ latency** | The duration that locally closed TCP sessions are left waiting for late packets. |
+| **Connection/session lifespan** | The duration of a network connection from initialization to close. Some protocols like HTTP can use a keep-alive strategy, leaving connections open and idle for future requests, to avoid the overheads and latency of repeated connection establishment. |
+| **System call send/ receive latency** | Time for the socket read/write calls (any syscalls that read/write to sockets, including read(2), write(2), recv(2), send(2), and variants). |
+| **System Call Connect Latency** | For connection establishment; note that some applications perform this as a non-blocking syscall. |
+| **Network round trip time** | The time for a network request to make a round-trip between endpoints. The kernel may use such measurements with congestion control algorithms. |
+| **Interrupt Latency** | Time from a network controller interrupt for a received packet to when it is serviced by the kernel. |
+| **Inter stack latency** | Time for a packet to move through the kernel TCP/IP stack. |
+
+_**SO_TIMESTAMPING**_ can identify transmission delays, network round-trip time, and inter-stack latencies; this can be especially helpful when analyzing complex packet latency involving tunneling [Hassas Yeganeh 19].
+
+## Perfromance Monitoring
+Key metrics for network monitoring are
+- **Throughput**: Network interface bytes per second for both receive and transmit, ideally for each interface
+- **Connections**: TCP connections per second, as another indication of network load
+- **Errors**: Including dropped packet counters
+- **TCP** retransmits: Also useful to record for correlation with network issues
+- **TCP out-of-order packets**: Can also cause performance problems
+
+## TCP Analysis
+specific TCP behavior can be investigated, including:
+- Usage of TCP (socket) send/receive buffers
+- Usage of TCP backlog queues
+- Kernel drops due to the backlog queue being full
+- Congestion window size, including zero-size advertisements
+- SYNs received during a TCP TIME_WAIT interval
+
+The last behavior can become a scalability problem when a server is connecting frequently to another on the same destination port, using the same source and destination IP addresses. The only distinguishing factor for each connection is the client source port—the ephemeral port—which for TCP is a 16-bit value and may be further constrained by operating system parameters (minimum and maximum). Combined with the *TCP TIME_WAIT* interval, which may be 60 seconds, a high rate of connections (more than 65,536 during 60 seconds) can encounter a clash for new connections. In this scenario, a *SYN* is sent while that ephemeral port is still associated with a previous TCP session that is in *TIME_WAIT*, and the new SYN may be rejected if it is misidentified as part of the old connection (a collision). To avoid this issue, the Linux kernel attempts to reuse or recycle connections quickly (which usually works well). The use of multiple IP addresses by the server is another possible solution, as is the *SO_LINGER* socket option with a low linger time.
 
 ## Static Performance Tuning
-Static performance tuning focuses on issues of the configured environment. For file system performance, examine the following aspects of the static configuration:
-- How many file systems are mounted and actively used?
-- What is the file system record size?
-- Are access timestamps enabled?
-- What other file system options are enabled (compression, encryption...)?
-- How has the file system cache been configured? Maximum size?
-- How have other caches (directory, inode, buffer) been configured?
-- Is a second-level cache present and in use?
-- How many storage devices are present and in use?
-- What is the storage device configuration? RAID?
-- Which file system types are used?
-- What is the version of the file system (or kernel)?
-- Are there file system bugs/patches that should be considered?
-- Are there resource controls in use for file system I/O?
+For network performance, examine the following aspects of the static configuration:
+- How many network interfaces are available for use? Are currently in use?
+- What is the maximum speed of the network interfaces?
+- What is the currently negotiated speed of the network interfaces?
+- Are network interfaces negotiated as half or full duplex?
+- What MTU is configured for the network interfaces?
+- Are network interfaces trunked?
+- What tunable parameters exist for the device driver? IP layer? TCP layer?
+- Have any tunable parameters been changed from the defaults?
+- How is routing configured? What is the default gateway?
+- What is the maximum throughput of network components in the data path (all components, including switch and router backplanes)?
+- What is the maximum MTU for the datapath and does fragmentation occur?
+- Are any wireless connections in the data path? Are they suffering interference?
+- Is forwarding enabled? Is the system acting as a router?
+- How is DNS configured? How far away is the server?
+- Are there known performance issues (bugs) with the version of the network interface firmware, or any other network hardware?
+- Are there known performance issues (bugs) with the network device driver? Kernel TCP/IP stack?
+- What firewalls are present?
+- Are there software-imposed network throughput limits present (resource controls)? What are they?
 
 # Observability Tools
 | Tool | Description |
 | :---    | :---     |
-| *mount* | List file systems and their mount flags |
-| *free* | Cache capacity statistics |
-| *top* | Includes memory usage summary |
-| *vmstat* | Virtual memory statistics |
-| *sar* | Various statistics, including historic |
-| *slabtop* | Kernel slab allocator statistics |
-| *strace* | System call tracing |
-| *fatrace* | Trace file system operations using fanotify |
-| *latencytop* | Show system-wide latency sources |
-| *opensnoop* | Trace files opened |
-| *filetop* | Top files in use by IOPS and bytes |
-| *cachestat* | Page cache statistics |
-| *ext4dist (xfs, zfs, btrfs, nfs)* | Show ext4 operation latency distribution |
-| *ext4slower (xfs, zfs, btrfs, nfs)* | Show slow ext4 operations |
-| *bpftrace* | Custom file system tracing |
+| *ss* | Socket statistics |
+| *ip* | Network interface and route statistics |
+| *ifconfig* | Network interface statistics |
+| *nstat* | Network stack statistics |
+| *netstat* | Various network stack and interface statistics |
+| *sar* | Various network stack and interface statistics |
+| *nicstat* | Network interface throughput and utilization |
+| *ethtool* | Network interface driver statistics |
+| *tcplife* | Trace TCP session lifespans with connection details |
+| *tcptop* | Show TCP throughput by host and process |
+| *tcpretrans* | Trace TCP retransmits with address and TCP state |
+| *bpftrace* | TCP/IP stack tracing: connections, packets, drops, latency |
+| *tcpdump* | Network packet sniffer |
+| Wireshark | Graphical network packet inspection |
 
-## Other Tools
+# Other Tools
 | Tool | Description |
 | :---    | :---     |
-| *syscount* | Counts syscalls including file system-related |
-| *statsnoop* | Trace calls to stat(2) varieties |
-| *syncsnoop* | Trace sync(2) and variety calls with timestamps |
-| *mmapfiles* | Count mmap(2) files |
-| *scread* | Count read(2) files |
-| *fmapfault* | Count file map faults |
-| *filelife* | Trace short-lived files with their lifespan in seconds |
-| *vfsstat* | Common VFS operation statistics |
-| *vfscount* | Count all VFS operations |
-| *vfssize* | Show VFS read/write sizes |
-| *fsrwstat* | Show VFS reads/writes by file system type |
-| *fileslower* | Show slow file reads/writes |
-| *filetype* | Show VFS reads/writes by file type and process |
-| *ioprofile* | Count stacks on I/O to show code paths |
-| *writesync* | Show regular file writes by sync flag |
-| *writeback* | Show write-back events and latencies |
-| *dcstat* | Directory cache hit statistics |
-| *dcsnoop* | Trace directory cache lookups |
-| *mountsnoop* | Trace mount and umounts system-wide |
-| *icstat* | Inode cache hit statistics |
-| *bufgrow* | Buffer cache growth by process and bytes |
-| *readahead* | Show read ahead hits and efficiency |
+| *offcputime* | Off-CPU profiling can show network I/O |
+| *sockstat* | High-level socket statistics |
+| *sofamily* | Count address families for new sockets, by process |
+| *soprotcol* | Count transport protocols for new sockets, by process |
+| *soconnect* | Trace socket IP-protocol connections with details |
+| *soaccept* | Trace socket IP-protocol accepts with details |
+| *socketio* | Summarize socket details with I/O counts |
+| *socksize* | Show socket I/O sizes as per-process histograms |
+| *sormem* | Show socket receive buffer usage and overflows |
+| *soconnlat* | Summarize IP socket connection latency with stacks |
+| *so1stbyte* | Summarize IP socket first byte latency |
+| *tcpconnect* | Trace TCP active connections (connect()) |
+| *tcpaccept* | Trace TCP passive connections (accept()) |
+| *tcpwin* | Trace TCP send congestion window parameters |
+| *tcpnagle* | Trace TCP Nagle usage and transmit delays |
+| *udpconnect* | Trace new UDP connections from localhost |
+| *gethostlatency* | Trace DNS lookup latency via library calls |
+| *ipecn* | Trace IP inbound explicit congestion notification |
+| *superping* | Measure ICMP echo times from the network stack |
+| *qdisc-fq(...)* | Show FQ qdisc queue latency |
+| *netsize* | Show net device I/O sizes |
+| *nettxlat* | Show net device transmission latency |
+| *skbdrop* | Trace sk_buff drops with kernel stack traces |
+| *skblife* | Lifespan of sk_buff as inter-stack latency |
+| *ieee80211scan* | Trace IEEE 802.11 WiFi scanning |
+
+Other Linux network observability tools and sources include:
+- _**strace(1)**_: Trace socket-related syscalls and examine the options used (note that strace(1) has high overhead)
+- _**lsof(8)**_: List open files by process ID, including socket details
+- _**nfsstat(8)**_: NFS server and client statistics
+- _**ifpps(8)**_: Top-like network and system statistics
+- _**iftop(8)**_: Summarize network interface throughput by host (sniffer)
+- _**perf(1)**_: Count and record network tracepoints and kernel functions.
+- _**/proc/net**_: Contains many network statistics files
+- _**BPF iterator_**: Allows BPF programs to export custom statistics in /sys/fs/bpf
+
+# Tuning
+Network tunable parameters are usually already tuned to provide high performance. The network stack is also usually designed to respond dynamically to different workloads, providing optimum performance.
+
+Before trying tunable parameters, it can be worthwhile to first understand network usage. This may also identify unnecessary work that can be eliminated, leading to much greater performance wins. Try the workload characterization and static performance tuning methodologies using the tools in the previous section.
+
+## System Wide
+On Linux, system-wide tunable parameters can be viewed and set using the _**sysctl(8)**_ command and written to **/etc/sysctl.conf**. They can also be read and written from the _**/proc**_ file system, under _**/proc/sys/net**_.
+
+> Refer book for detailed set of Netflix specific parameters that are tuned for their cloud infrastructure
+
+## Socket Options
+| Socket Option Name | Description |
+| :---    | :---     |
+| *SO_SNDBUF*, *SORCVBUF* | Send and receive buffer sizes (these can be tuned up to the system limits described earlier; there is also SO_SNDBUFFORCE to override the send limit). |
+| *SO_REUSEPORT* | Allows multiple processes or threads to bind to the same port, allowing the kernel to distribute load across them for scalability (since Linux 3.9). |
+| *SO_MAX_PACING_RATE* | Sets the maximum pacing rate, in bytes per second (see tc-fq(8)). |
+| *SO_LINGER* | Can be used to reduce TIME_WAIT latency. |
+| *SO_TXTIME* | Request time-based packet transmission, where deadlines can be supplied (since Linux 4.19) |
+| *TCP_NODELAY* | Disables Nagle, sending segments as soon as possible. This may improve latency at the cost of higher network utilization (more packets). |
+| *TCP_CORK* | Pause transmission until full packets can be sent, improving throughput. (There is also a system-wide setting for the kernel to automatically attempt corking: net.ipv4.tcp_autocorking.) |
+| *TCP_QUICKACK* | Send ACKs immediately (can increase send bandwidth). |
+| *TCP_CONGESTION* | Congestion control algorithm for the socket. |
 
 # References from book reading google group
-1. [Linux Performance Tuning: Dealing with Memory and Disk IO](https://www.yugabyte.com/blog/linux-performance-tuning-memory-disk-io/)
+1. []()
 2. 
